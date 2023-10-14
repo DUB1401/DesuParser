@@ -92,6 +92,13 @@ logging.info("Using ID instead slug: " + ("ON." if Settings["use-id-instead-slug
 # Список описаний обрабатываемых команд.
 CommandsList = list()
 
+# Создание команды: getcov.
+COM_getcov = Command("getcov")
+COM_getcov.addArgument(ArgumentType.All, Important = True)
+COM_getcov.addFlagPosition(["f"])
+COM_getcov.addFlagPosition(["s"])
+CommandsList.append(COM_getcov)
+
 # Создание команды: parse.
 COM_parse = Command("parse")
 COM_parse.addArgument(ArgumentType.All, Important = True, LayoutIndex = 1)
@@ -164,6 +171,15 @@ if CommandDataStruct.Name in ["collect", "getcov", "parse", "update"]:
 #==========================================================================================#
 # >>>>> ОБРАБОТКА КОММАНД <<<<< #
 #==========================================================================================#
+
+# Обработка команды: getcov.
+if "getcov" == CommandDataStruct.Name:
+	# Запись в лог сообщения: заголовок парсинга.
+	logging.info("====== Parsing ======")
+	# Парсинг тайтла.
+	LocalTitle = TitleParser(Settings, Navigator, CommandDataStruct.Arguments[0], ForceMode = IsForceModeActivated, Message = InFuncMessage_Shutdown + InFuncMessage_ForceMode, Amending = False)
+	# Сохранение локальных файлов тайтла.
+	LocalTitle.downloadCover()
 
 # Обработка команды: parse.
 if "parse" == CommandDataStruct.Name:
