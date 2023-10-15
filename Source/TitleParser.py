@@ -31,7 +31,7 @@ class TitleParser:
 			# Если в главе не описаны слайды.
 			if Bufer["slides"] == []:
 				# Дополнение слайдами.
-				Bufer["slides"] = self.__GetChapterSlides(self.__BuilChapterURI(Bufer))
+				Bufer["slides"] = self.__GetChapterSlides(self.__BuilChapterURI(Bufer), "Title: \"" + self.__Slug + "\". Volume " + str(Bufer["volume"]) + " chapter " + str(Bufer["number"]) + ".")
 				# Запись в лог сообщения: данные о слайдах добавлены.
 				logging.info("Title: \"" + self.__Slug + "\". Volume " + str(Bufer["volume"]) + " chapter " + str(Bufer["number"]) + " amended.")
 				# Перезапись главы буфером.
@@ -147,7 +147,7 @@ class TitleParser:
 		return Volume, Chapter
 	
 	# Возвращает список слайдов главы.
-	def __GetChapterSlides(self, ChapterURI: str) -> list[dict]:
+	def __GetChapterSlides(self, ChapterURI: str, LoggingInfo: str) -> list[dict]:
 		# Список слайдов.
 		Slides = list()
 		# Индекс слайда.
@@ -184,13 +184,20 @@ class TitleParser:
 				
 				# Если включен режим определения размера слайдов.
 				if self.__Settings["sizing-images"] == True:
-					# Получение описания размеров слайда.
-					Sizes = Container["style"].replace("height: ", "").replace(" width: ", "").replace("px", "").strip(';')
-					# Получение размеров.
-					Height, Width = Sizes.split(';')
-					# Запись размеров.
-					Bufer["height"] = int(Height)
-					Bufer["width"] = int(Width)
+					
+					# Если присутствует стиль с размерами слайда.
+					if Container.has_key("style") == True:
+						# Получение описания размеров слайда.
+						Sizes = Container["style"].replace("height: ", "").replace(" width: ", "").replace("px", "").strip(';')
+						# Получение размеров.
+						Height, Width = Sizes.split(';')
+						# Запись размеров.
+						Bufer["height"] = int(Height)
+						Bufer["width"] = int(Width)
+						
+					else:
+						# Запись в лог ошибки: не удалось определить размер слайда.
+						logging.error(LoggingInfo + " Unable to sizing slide " + str(SlideIndex - 1) + ".")
 					
 				# Запись слайда.
 				Slides.append(Bufer)
