@@ -4,6 +4,7 @@ from dublib.Methods import Cls, CheckPythonMinimalVersion, MakeRootDirectories, 
 from Source.BrowserNavigator import BrowserNavigator
 from Source.Functions import SecondsToTimeString
 from Source.TitleParser import TitleParser
+from Source.Updater import Updater
 from dublib.Terminalyzer import *
 
 import datetime
@@ -92,6 +93,11 @@ logging.info("Using ID instead slug: " + ("ON." if Settings["use-id-instead-slug
 # Список описаний обрабатываемых команд.
 CommandsList = list()
 
+# Создание команды: collect.
+COM_collect = Command("collect")
+COM_collect.addFlagPosition(["s"])
+CommandsList.append(COM_collect)
+
 # Создание команды: getcov.
 COM_getcov = Command("getcov")
 COM_getcov.addArgument(ArgumentType.All, Important = True)
@@ -107,6 +113,15 @@ COM_parse.addFlagPosition(["f"])
 COM_parse.addFlagPosition(["s"])
 COM_parse.addKeyPosition(["from"], ArgumentType.All)
 CommandsList.append(COM_parse)
+
+# Создание команды: update.
+COM_update = Command("update")
+COM_update.addArgument(ArgumentType.All, LayoutIndex = 1)
+COM_update.addFlagPosition(["local"], LayoutIndex = 1)
+COM_update.addFlagPosition(["f"])
+COM_update.addFlagPosition(["s"])
+COM_update.addKeyPosition(["from"], ArgumentType.All)
+CommandsList.append(COM_update)
 
 # Инициализация обработчика консольных аргументов.
 CAC = Terminalyzer()
@@ -162,15 +177,28 @@ if "s" in CommandDataStruct.Flags:
 #==========================================================================================#
 
 # Экземпляр навигатора.
-Navigator = None
-
-# Если потребуется браузер.
-if CommandDataStruct.Name in ["collect", "getcov", "parse", "update"]:
-	Navigator = BrowserNavigator(Settings)
+Navigator = BrowserNavigator(Settings)
 
 #==========================================================================================#
 # >>>>> ОБРАБОТКА КОММАНД <<<<< #
 #==========================================================================================#
+
+# Обработка команды: collect.
+if "collect" == CommandDataStruct.Name:
+	# Запись в лог сообщения: сбор списка тайтлов.
+	logging.info("====== Collecting ======")
+	# Инициализация проверки обновлений.
+	UpdateChecker = Updater(Settings, Navigator)
+	# Получение списка обновлённых тайтлов.
+	TitlesList = UpdateChecker.getUpdatesList()
+
+	# Сохранение каждого алиаса в файл.
+	with open("Collection.txt", "w") as FileWriter:
+		for Slug in TitlesList:
+			FileWriter.write(Slug + "\n")
+			
+	# Запись в лог сообщения: количество сохранённых в коллекцию файлов.
+	logging.info("Titles slugs saved in collection: " + str(len(TitlesList)) + ".")
 
 # Обработка команды: getcov.
 if "getcov" == CommandDataStruct.Name:
@@ -247,14 +275,88 @@ if "parse" == CommandDataStruct.Name:
 		LocalTitle.downloadCover()
 		# Сохранение локальных файлов тайтла.
 		LocalTitle.save()
+		
+# Обработка команды: update.
+if "update" == CommandDataStruct.Name:
+	# Запись в лог сообщения: заголовок обновления.
+	logging.info("====== Updating ======")
+	# Список тайтлов для обновления.
+	TitlesList = list()
+	# Индекс стартового алиаса.
+	StartSlugIndex = 0
+	
+	# Если указано обновить локальные тайтлы.
+	if "local" in CommandDataStruct.Flags:
+		# Список названий файлов в директории тайтлов.
+		Files = list()
+		# Получение списка файлов в директории.
+		Files = os.listdir(Settings["titles-directory"])
+		# Фильтрация только файлов формата JSON.
+		Files = list(filter(lambda x: x.endswith(".json"), Files))
+			
+		# Чтение всех алиасов из локальных файлов.
+		for File in Files:
+			# Открытие локального описательного файла JSON.
+			LocalTitle = ReadJSON(Settings["titles-directory"] + File)
+
+			# Помещение алиаса в список из формата DMP-V1.
+			if LocalTitle["format"] == "dmp-v1":
+				TitlesList.append(LocalTitle["slug"])
+
+			# Помещение алиаса в список из формата HCMP-V1.
+			if LocalTitle["format"] == "hcmp-v1":
+				TitlesList.append(str(LocalTitle["id"]) + "-" + LocalTitle["slug"])
+
+		# Запись в лог сообщения: количество доступных для обновления тайтлов.
+		logging.info("Local titles to update: " + str(len(TitlesList)) + ".")
+		
+	# Обновить изменённые на сервере за последнее время тайтлы.
+	else:
+		# Инициализация проверки обновлений.
+		UpdateChecker = Updater(Settings, Navigator)
+		# Получение списка обновлённых тайтлов.
+		TitlesList = UpdateChecker.getUpdatesList()
+		# Запись в лог сообщения: количество найденных за указанный период обновлений.
+		logging.info("Titles found for update period: " + str(len(TitlesList)) + ".")
+	
+	# Если указан алиас, с которого необходимо начать.
+	if "from" in CommandDataStruct.Keys:
+		
+		# Если алиас присутствует в списке.
+		if CommandDataStruct.Values["from"] in TitlesList:
+			# Запись в лог сообщения: парсинг коллекции начнётся с алиаса.
+			logging.info("Parcing will be started from \"" + CommandDataStruct.Values["from"] + "\".")
+			# Задать стартовый индекс, равный индексу алиаса в коллекции.
+			StartSlugIndex = TitlesList.index(CommandDataStruct.Values["from"])
+			
+		else:
+			# Запись в лог предупреждения: стартовый алиас не найден.
+			logging.warning("Unable to find start slug in \"Collection.txt\". All titles skipped.")
+			# Задать стартовый индекс, равный количеству алиасов.
+			StartSlugIndex = len(TitlesList)
+
+	# Запись в лог сообщения: заголовог парсинга.
+	logging.info("====== Parsing ======")
+		
+	# Спарсить каждый тайтл из списка.
+	for Index in range(StartSlugIndex, len(TitlesList)):
+		# Часть сообщения о прогрессе.
+		InFuncMessage_Progress = "Updating titles: " + str(Index + 1) + " / " + str(len(TitlesList)) + "\n"
+		# Генерация сообщения.
+		ExternalMessage = InFuncMessage_Shutdown + InFuncMessage_ForceMode + InFuncMessage_Progress
+		# Парсинг тайтла.
+		LocalTitle = TitleParser(Settings, Navigator, TitlesList[Index], ForceMode = IsForceModeActivated, Message = ExternalMessage)
+		# Загружает обложку тайтла.
+		LocalTitle.downloadCover()
+		# Сохранение локальных файлов тайтла.
+		LocalTitle.save()
 
 #==========================================================================================#
 # >>>>> ЗАВЕРШЕНИЕ РАБОТЫ СКРИПТА <<<<< #
 #==========================================================================================#
 
-# Если использовался браузер, то закрыть его.
-if Navigator != None:
-	Navigator.close()
+# Закрыть навигатор.
+Navigator.close()
 
 # Запись в лог сообщения: заголовок завершения работы скрипта.
 logging.info("====== Exiting ======")

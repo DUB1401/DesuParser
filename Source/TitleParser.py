@@ -69,17 +69,17 @@ class TitleParser:
 			for TagName in list(self.__Settings["tags"].keys()):
 
 				# Если название жанра совпадает с названием тега.
-				if self.__Title["genres"][GenreIndex] == TagName:
+				if self.__Title["genres"][GenreIndex] == TagName.lower():
 					# Запись жанра для последующего удаления.
 					GenresToDeleting.append(self.__Title["genres"][GenreIndex])
 					
 					# Если жанр не нужно переименовать в тег.
-					if self.__Settings["tags"][TagName] == None:
+					if self.__Settings["tags"][TagName.lower()] == None:
 						self.__Title["tags"].append(self.__Title["genres"][GenreIndex])
 
 					# Если жанр нужно переименовать в тег.
 					else:
-						self.__Title["tags"].append(self.__Settings["tags"][TagName])
+						self.__Title["tags"].append(self.__Settings["tags"][TagName.lower()])
 
 		# Удаление ненужных жанров.
 		for Genre in GenresToDeleting:
@@ -87,12 +87,6 @@ class TitleParser:
 			
 	# Возвращает структуру главы.
 	def __GetChapter(self, ChapterURI: str) -> dict:
-		# Переход на страницу главы.
-		self.__Navigator.loadPage("https://desu.me/manga/" + self.__Slug + "/" + ChapterURI + "/rus")
-		# HTML код тела страницы после полной загрузки.
-		BodyHTML = self.__Navigator.getBodyHTML()
-		# Парсинг HTML кода страницы.
-		Soup = BeautifulSoup(BodyHTML, "html.parser")
 		# Получение номера тома и главы.
 		Volume, Chapter = self.__GetChapterVolumeAndNumber(ChapterURI)
 		# Структура главы.
