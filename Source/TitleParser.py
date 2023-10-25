@@ -31,7 +31,7 @@ class TitleParser:
 			# Если в главе не описаны слайды.
 			if Bufer["slides"] == []:
 				# Дополнение слайдами.
-				Bufer["slides"] = self.__GetChapterSlides(self.__BuilChapterURI(Bufer), "Title: \"" + self.__Slug + "\". Volume " + str(Bufer["volume"]) + " chapter " + str(Bufer["number"]) + ".")
+				Bufer["slides"] = self.__GetChapterSlides(self.__GetChapterURI(Bufer["id"]), "Title: \"" + self.__Slug + "\". Volume " + str(Bufer["volume"]) + " chapter " + str(Bufer["number"]) + ".")
 				# Запись в лог сообщения: данные о слайдах добавлены.
 				logging.info("Title: \"" + self.__Slug + "\". Volume " + str(Bufer["volume"]) + " chapter " + str(Bufer["number"]) + " amended.")
 				# Перезапись главы буфером.
@@ -42,12 +42,15 @@ class TitleParser:
 		# Запись в лог сообщения: дополнение глав.
 		logging.info("Title: \"" + self.__Slug + "\". Amended chapters: " + str(AmendedChaptersCount) + ".")
 		
-	# Строит URI главы из её данных.
-	def __BuilChapterURI(self, Chapter: str) -> str:
-		# URI главы.
-		URI = "vol" + str(Chapter["volume"]) + "/ch" + str(Chapter["number"])
+	# Генерирует синтетически ID главы.
+	def __BuildChapterID(self, Volume: int | str, Number: int | str) -> int:
+		# Конвертирование номеров в строки.
+		Volume = str(Volume).replace('.', "")
+		Number = str(Number).replace('.', "")
+		# Синтетический ID.
+		ID = int(Volume + "0" + Number)
 		
-		return URI
+		return ID
 	
 	# Выставляет возрастное ограничение.
 	def __CheckAgeLimit(self):
@@ -86,65 +89,19 @@ class TitleParser:
 			self.__Title["genres"].remove(Genre)
 			
 	# Возвращает структуру главы.
-	def __GetChapter(self, ChapterURI: str) -> dict:
-		# Получение номера тома и главы.
-		Volume, Chapter = self.__GetChapterVolumeAndNumber(ChapterURI)
+	def __GetChapter(self, Chapter: dict) -> dict:
 		# Структура главы.
 		ChapterStruct = {
-			"id": self.__GetChapterID(ChapterURI),
-			"number": Chapter,
-			"volume": Volume,
-			"name": None,
+			"id": Chapter["id"],
+			"number": Chapter["number"],
+			"volume": Chapter["volume"],
+			"name": Chapter["name"],
 			"is-paid": False,
 			"translator": None,
 			"slides": list()
 		}
-		
-		# Если для главы с таким ID определено название.
-		if ChapterStruct["id"] in self.__ChaptersNames.keys():
-			ChapterStruct["name"] = self.__ChaptersNames[ChapterStruct["id"]]
 
 		return ChapterStruct
-	
-	# Возвращает синтетически ID главы.
-	def __GetChapterID(self, ChapterURI: str) -> int:
-		# Получение номеров тома и главы.
-		Volume, Chapter = self.__GetChapterVolumeAndNumber(ChapterURI)
-		# Конвертирование номеров в строки.
-		Volume = str(Volume).replace('.', "")
-		Chapter = str(Chapter).replace('.', "")
-		# Синтетический ID.
-		ID = int(Volume + "0" + Chapter)
-		
-		return ID
-	
-	# Возвращает том и номер главы.
-	def __GetChapterVolumeAndNumber(self, ChapterURI: str) -> tuple[int | float, int | float]:
-		# Разбитие URI на том и главу.
-		Volume, Chapter = ChapterURI.split('/')
-		# Очистка букв.
-		Volume = Volume.replace("vol", "")
-		Chapter = Chapter.replace("ch", "")
-		
-		# Если в номере тома есть точка.
-		if '.' in Volume:
-			# Конвертирование номера тома в float.
-			Volume = float(Volume)
-			
-		else:
-			# Конвертирование номера тома в ште.
-			Volume = int(Volume)
-			
-		# Если в номере главы есть точка.
-		if '.' in Chapter:
-			# Конвертирование номера главы в float.
-			Chapter = float(Chapter)
-			
-		else:
-			# Конвертирование номера главы в ште.
-			Chapter = int(Chapter)
-			
-		return Volume, Chapter
 	
 	# Возвращает список слайдов главы.
 	def __GetChapterSlides(self, ChapterURI: str, LoggingInfo: str) -> list[dict]:
@@ -208,13 +165,27 @@ class TitleParser:
 			
 		return Slides
 	
+	# Возвращает URI главы.
+	def __GetChapterURI(self, ChapterID: int | str) -> str | None:
+		# URI главы.
+		ChapterURI = None
+		
+		# Для каждой описанной главы.
+		for Chapter in self.__ChaptersData:
+			
+			# Если ID главы совпадает со словарём описания, то записать URI.
+			if Chapter["id"] == int(ChapterID):
+				ChapterURI = Chapter["URI"]
+				
+		return ChapterURI
+	
 	# Получает данные о главах.
-	def __GetChaptersData(self, ChapterURI: list[str]):
+	def __GetChapters(self):
 		# Список глав.
 		Chapters = list()		
 
 		# Для каждой главы.
-		for Chapter in ChapterURI:
+		for Chapter in self.__ChaptersData:
 			# Получение данных о главе.
 			Chapters.append(self.__GetChapter(Chapter))
 			
@@ -222,7 +193,7 @@ class TitleParser:
 		self.__Title["chapters"][self.__TitleID] = list(reversed(Chapters))
 		
 	# Получает названия глав.
-	def __GetChaptersNames(self, Soup: BeautifulSoup):
+	def __GetChaptersData(self, Soup: BeautifulSoup):
 		# Поиск контейнера списка глав.
 		ChaptersContainer = Soup.find("ul", {"class": "chlist"})
 		# Парсинг контейнера списка глав.
@@ -232,50 +203,29 @@ class TitleParser:
 		
 		# Для каждой ссылки.
 		for Link in ChaptersLinks:
-			# Получение URI главы.
-			ChapterURI = Link["href"].replace(f"manga/{self.__Slug}/", "").replace("/rus", "")
-			# Получение ID главы.
-			ChapterID = self.__GetChapterID(ChapterURI)
+			# Буфер данных главы.
+			Bufer = {
+				"id": None,
+				"name": None,
+				"volume": None,
+				"number": None,
+				"URI": None
+			}
+			# Получение данных главы.
+			Bufer["volume"] = re.search(r"Том \d+(\.\d+)?", Link.get_text())[0].replace("Том ", "")
+			Bufer["number"] = re.search(r"Глава \d+(\.\d+)?", Link.get_text())[0].replace("Глава ", "")
+			Bufer["id"] = self.__BuildChapterID(Bufer["volume"], Bufer["number"])
+			Bufer["URI"] = Link["href"].replace(f"manga/{self.__Slug}/", "").replace("/rus", "")
 			# Поиск блока с названием главы.
 			ChapterNameBlock = BeautifulSoup(str(Link), "html.parser").find("span", {"class": "title nowrap"})
 			
 			# Если блок с названием главы присутствует.
 			if ChapterNameBlock != None:
-				self.__ChaptersNames[ChapterID] = ChapterNameBlock.get_text().lstrip(" -")
-		
-	# Возвращает список URI глав тайтла.
-	def __GetChaptersURI(self) -> list:
-		# Список URI глав тайтла.
-		ChaptersList = list()
-		# URL всех глав тайтла или похожих тайтлов.
-		TitleURL = "https://desu.me/manga/" + self.__Slug
-		# Переход на страницу всех глав тайтла или похожих тайтлов.
-		StatusCode = self.__Navigator.loadPage(TitleURL)
-		
-		# Если запрос успешен.
-		if StatusCode == 200:
-			# HTML код тела страницы после полной загрузки.
-			PageHTML = self.__Navigator.getBodyHTML()
-			# Парсинг HTML кода страницы.
-			Soup = BeautifulSoup(PageHTML, "html.parser")
-			# Поиск контейнера списка глав.
-			ChaptersContainer = Soup.find("ul", {"class": "chlist"})
-			# Парсинг контейнера списка глав.
-			Soup = BeautifulSoup(str(ChaptersContainer), "html.parser")
-			# Парсинг ссылок на главы.
-			ChaptersLinks = Soup.find_all("a")
-			
-			# Для каждой ссылки сохранить URI главы.
-			for Link in ChaptersLinks:
-				ChaptersList.append(Link["href"].replace(f"manga/{self.__Slug}/", "").replace("/rus", ""))
-							
-		else:
-			# Запись в лог предупреждения: тайтл не найден.
-			logging.warning("Title: \"" + self.__Slug + "\". Not found. Skipped.")
-			# Перевод тайтла в неактивный статус.
-			self.__IsActive = False
-
-		return ChaptersList
+				# Запись названия главы.
+				Bufer["name"] = ChapterNameBlock.get_text().lstrip(" -")
+				
+			# Запись данных о главе.
+			self.__ChaptersData.append(Bufer)
 	
 	# Возвращает структуру обложки.
 	def __GetCoverData(self) -> dict:
@@ -415,8 +365,8 @@ class TitleParser:
 			# Генерация ветви.
 			self.__Title["branches"].append({"id": int(self.__TitleID), "chapters-count": None})
 			self.__Title["chapters"][self.__TitleID] = list()
-			# Получение названий глав.
-			self.__GetChaptersNames(Soup)
+			# Получение данных о главах.
+			self.__GetChaptersData(Soup)
 			
 			# Если у тайтла есть альтернативные названия.
 			if AnotherNamesBlock != None:
@@ -507,8 +457,8 @@ class TitleParser:
 		#==========================================================================================#
 		# Количество выполненных слияний глав.
 		self.__MergedChaptersCount = 0
-		# Список URI глав тайтла.
-		self.__ChaptersURI = list()
+		# Список данных глав тайтла.
+		self.__ChaptersData = list()
 		# Состояние: включена ли перезапись файлов.
 		self.__ForceMode = ForceMode
 		# Глобальные настройки.
@@ -546,13 +496,9 @@ class TitleParser:
 		self.__Slug = Slug
 		# Сообщение из внешнего обработчика.
 		self.__Message = Message + "Current title: " + self.__Slug + "\n\n"
-		# Словарь названий глав.
-		self.__ChaptersNames = dict()
 
 		#---> Получение данных о тайтле.
 		#==========================================================================================#
-		# Список URI глав в тайтле.
-		ChaptersURI = self.__GetChaptersURI()
 		# Запись в лог сообщения: парсинг начат.
 		logging.info("Title: \"" + self.__Slug + "\". Parcing...")
 		# Получение описательных данных тайтла.
@@ -561,7 +507,7 @@ class TitleParser:
 		# Если включена полная обработка файла.
 		if Amending == True and self.__IsActive == True:
 			# Получение данных глав тайтла.
-			self.__GetChaptersData(ChaptersURI)
+			self.__GetChapters()
 			
 			# Если включён режим перезаписи.
 			if ForceMode == False:

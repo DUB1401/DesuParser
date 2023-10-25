@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-from dublib.Methods import Cls, CheckPythonMinimalVersion, MakeRootDirectories, Shutdown, WriteJSON, ReadJSON
+from dublib.Methods import Cls, CheckPythonMinimalVersion, MakeRootDirectories, Shutdown, ReadJSON
 from Source.BrowserNavigator import BrowserNavigator
 from Source.Functions import SecondsToTimeString
 from Source.TitleParser import TitleParser
