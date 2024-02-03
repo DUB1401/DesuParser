@@ -1,6 +1,7 @@
-from Source.BrowserNavigator import BrowserNavigator
+from dublib.WebRequestor import WebRequestor
 from dublib.Methods import Cls
 from bs4 import BeautifulSoup
+from time import sleep
 
 class Updater:
 	
@@ -18,14 +19,17 @@ class Updater:
 		return IsUpdated
 
 	# Конструктор: задаёт глобальные настройки и менеджер навигации.
-	def __init__(self, Settings: dict, Navigator: BrowserNavigator):
+	def __init__(self, Settings: dict):
 
 		#---> Генерация свойств.
 		#==========================================================================================#
 		# Глобальные настройки.
 		self.__Settings = Settings.copy()
-		# Обработчик навигации экземпляра браузера.
-		self.__Navigator = Navigator
+		# Запросчик.
+		self.__Requestor = WebRequestor()
+		
+		# Инициализация запросчика.
+		self.__Requestor.initialize()
 
 	# Возвращает список алиасов обновлённых тайтлов.
 	def getUpdatesList(self) -> list:
@@ -44,10 +48,8 @@ class Updater:
 			Cls()
 			# Вывод в консоль: сканируемая страница.
 			print("Scanning page: " + str(PageIndex))
-			# Переход на страницу каталога.
-			self.__Navigator.loadPage("https://desu.me/manga/?page=" + str(PageIndex))
-			# HTML код тела страницы после полной загрузки.
-			BodyHTML = self.__Navigator.getBodyHTML()
+			# HTML код страницы.
+			BodyHTML = self.__Requestor.get("https://desu.me/manga/?page=" + str(PageIndex)).text
 			# Парсинг HTML кода страницы.
 			Soup = BeautifulSoup(BodyHTML, "html.parser")
 			# Поиск всех блоков обновлений.
@@ -80,5 +82,8 @@ class Updater:
 				Slug = TitleLink["href"].replace("manga/", "").strip('/')
 				# Сохранение алиаса.
 				Updates.append(Slug)
+				
+			# Если не все обновления получены, выждать интервал.
+			if IsAllUpdatesRecieved == False: sleep(self.__Settings["delay"])
 			
 		return Updates

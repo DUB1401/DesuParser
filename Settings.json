@@ -1,12 +1,8 @@
 {
-	"sizing-images": true,
+	"sizing-covers": true,
 	"use-id-instead-slug": false,
 	"covers-directory": "",
 	"titles-directory": "",
-	"tags": {},
-	"disable-ssl-verification": false,
-	"adblock": false,
-	"timeout": 75,
-	"retry-tries": 3,
-	"debug": false
+	"delay": 1,
+	"tags": {}
 }

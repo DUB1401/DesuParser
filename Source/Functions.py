@@ -1,5 +1,27 @@
-import random
-import time
+from PIL import Image
+
+# Возвращает разрешение изображения.
+def GetImageResolution(Path: str) -> dict:
+	# Разрешение.
+	Resolution = {
+		"width": None,
+		"height": None
+	}
+	
+	try:
+		
+		# Чтение изображения.
+		with Image.open(Path) as ImageReader:
+			
+			# Если формат изображения *.JPEG.
+			if ImageReader.format == "JPEG":
+				# Запись разрешения.
+				Resolution["width"] = ImageReader.size[0]
+				Resolution["height"] = ImageReader.size[1]
+				
+	except: pass
+	
+	return Resolution
 
 # Усекает число до определённого количества знаков после запятой.
 def ToFixedFloat(FloatNumber: float, Digits: int = 0) -> float:
@@ -27,7 +49,3 @@ def SecondsToTimeString(Seconds: float) -> str:
 		TimeString += str(Seconds) + " seconds"
 
 	return TimeString
-
-# Выжидает согласно заданному интервалу.
-def Wait(Settings: dict):
-	time.sleep(random.randint(Settings["min-delay"], Settings["max-delay"]))

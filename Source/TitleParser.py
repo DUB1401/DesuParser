@@ -1,10 +1,13 @@
-from dublib.Methods import Cls,ReadJSON, RemoveRecurringSubstrings, WriteJSON
-from Source.BrowserNavigator import BrowserNavigator
+from dublib.Methods import Cls, ReadJSON, RemoveRecurringSubstrings, WriteJSON
+from Source.Functions import GetImageResolution
+from dublib.WebRequestor import WebRequestor
 from bs4 import BeautifulSoup
+from time import sleep
 
 import requests
 import logging
 import shutil
+import json
 import os
 import re
 
@@ -38,6 +41,8 @@ class TitleParser:
 				self.__Title["chapters"][self.__TitleID][Index] = Bufer
 				# Инкремент количества дополненных глав.
 				AmendedChaptersCount += 1
+				# Если глава не последняя, выждать интервал.
+				if Index + 1 != TotalChaptersCount: sleep(self.__Settings["delay"])
 				
 		# Запись в лог сообщения: дополнение глав.
 		logging.info("Title: \"" + self.__Slug + "\". Amended chapters: " + str(AmendedChaptersCount) + ".")
@@ -93,8 +98,8 @@ class TitleParser:
 		# Структура главы.
 		ChapterStruct = {
 			"id": Chapter["id"],
-			"number": Chapter["number"],
 			"volume": Chapter["volume"],
+			"number": Chapter["number"],
 			"name": Chapter["name"],
 			"is-paid": False,
 			"translator": None,
@@ -107,61 +112,44 @@ class TitleParser:
 	def __GetChapterSlides(self, ChapterURI: str, LoggingInfo: str) -> list[dict]:
 		# Список слайдов.
 		Slides = list()
-		# Индекс слайда.
-		SlideIndex = 1
-		# Состояние: завершён ли сбор слайдов.
-		IsCollected = False
-		
-		# Пока удаётся находить слайды.
-		while IsCollected == False:
-			# Генерация ссылки на слайд.
-			Link = f"https://desu.me/manga/{self.__Slug}/{ChapterURI}/rus#page={SlideIndex}"
-			# Переход на страницу всех глав тайтла или похожих тайтлов.
-			self.__Navigator.loadPage(Link)
-			# Буфер описания слайда.
-			Bufer = {
-				"index": SlideIndex,
-				"link": None,
-				"width": None,
-				"height": None
-			}
-			# Инкремент индекса слайда.
-			SlideIndex += 1
-			# HTML код тела страницы после полной загрузки.
-			PageHTML = self.__Navigator.getBodyHTML()
+		# Запрос страницы.
+		Response = self.__Requestor.get(f"https://desu.me/manga/{self.__Slug}/{ChapterURI}/rus#page=1")
+
+		# Если запрос успешен.
+		if Response.status_code == 200:
 			# Парсинг HTML кода страницы.
-			Soup = BeautifulSoup(PageHTML, "html.parser")
-			# Поиск контейнера слайда.
-			Container = Soup.find("img", {"id": "manga"})
-
-			# Если слайд обнаружен.
-			if Container != None:
-				# Запись URL слайда.
-				Bufer["link"] = "https:" + Container["src"]
+			Soup = BeautifulSoup(Response.text, "html.parser")
+			# Поиск всех блоков JavaScript.
+			Scripts = Soup.find_all("script", {"type": "text/javascript"})
+			# Данные.
+			Data = None
+			# Директория на сервере.
+			Dir = None
+			
+			# Для каждого блока.
+			for Script in Scripts:
 				
-				# Если включен режим определения размера слайдов.
-				if self.__Settings["sizing-images"] == True:
-					
-					# Если присутствует стиль с размерами слайда.
-					if Container.has_key("style") == True:
-						# Получение описания размеров слайда.
-						Sizes = Container["style"].replace("height: ", "").replace(" width: ", "").replace("px", "").strip(';')
-						# Получение размеров.
-						Height, Width = Sizes.split(';')
-						# Запись размеров.
-						Bufer["height"] = int(Height)
-						Bufer["width"] = int(Width)
-						
-					else:
-						# Запись в лог ошибки: не удалось определить размер слайда.
-						logging.error(LoggingInfo + " Unable to sizing slide " + str(SlideIndex - 1) + ".")
-					
-				# Запись слайда.
-				Slides.append(Bufer)
-
-			else:
-				# Переключение состояния.
-				IsCollected = True
+				# Если скрипт содержит слайды.
+				if self.__Slug in str(Script):
+					# Приведение данных к списку списокв.
+					Data = json.loads(str(Script).split("images:")[-1].split("page:")[0].strip().strip(","))
+					# Получение директории.
+					Dir = str(Script).split("dir:")[-1].split("mangaUrl:")[0].strip().strip("\",")
+			
+			# Если удалось получить список слайдов.
+			if Data != None and Dir != None:
+				
+				# Для каждого элемента списка.
+				for SlideIndex in range(0, len(Data)):
+					# Буфер слайда.
+					Slide = {
+						"index": SlideIndex + 1,
+						"link": f"https:" + Dir + Data[SlideIndex][0],
+						"width": Data[SlideIndex][1],
+						"height": Data[SlideIndex][2]
+					}
+					# Запись данных о слайде.
+					Slides.append(Slide)
 			
 		return Slides
 	
@@ -228,11 +216,9 @@ class TitleParser:
 			self.__ChaptersData.append(Bufer)
 	
 	# Возвращает структуру обложки.
-	def __GetCoverData(self) -> dict:
+	def __GetCoverData(self, PageHTML: str) -> dict:
 		# Контейнер обложек.
 		CoversList = list()
-		# HTML код тела страницы после полной загрузки.
-		PageHTML = self.__Navigator.getBodyHTML()
 		# Парсинг HTML кода тела страницы.
 		Soup = BeautifulSoup(PageHTML, "html.parser")
 		# Поиск HTML элемента обложки.
@@ -254,37 +240,16 @@ class TitleParser:
 				Cover["filename"] = Cover["link"].split('/')[-1]
 				CoversList.append(Cover)
 
-				# Если включено определение размеров, попытаться получить разрешение обложки.
-				if self.__Settings["sizing-images"] == True:
-					# Ссылка на обложку.
-					CoverLink = Cover["link"]
-					# Скрипт определения разрешения слайда.
-					Script = f'''
-						var Done = arguments[0];
-						const Slide = new Image();
-						Slide.onload = function() {{
-							Done(Slide.width + "/" + Slide.height);
-						}}
-						Slide.src = "{CoverLink}";
-					'''
-					
-					try:
-						# Получение разрешения обложки.
-						CoverResolution = self.__Navigator.executeAsyncJavaScript(Script)
-								
-					except TimeoutError:
-						# Запись в лог ошибки: не удалось определить размер обложки.
-						logging.error(f"Unable to sizing cover.")
-						
-					else:
-
-						# Проверка успешности получения ширины обложки.
-						if CoverResolution.split('/')[0].isdigit() == True and int(CoverResolution.split('/')[0]) > 0:
-							Cover["width"] = int(CoverResolution.split('/')[0])
-
-						# Проверка успешности получения высоты обложки.
-						if CoverResolution.split('/')[1].isdigit() == True and int(CoverResolution.split('/')[1]) > 0:
-							Cover["height"] = int(CoverResolution.split('/')[1])
+				# Используемое имя тайтла: ID или алиас.
+				UsedTitleName = str(self.__ID) if self.__Settings["use-id-instead-slug"] == True else self.__Slug
+				
+				# Если включено определение разрешение обложки.
+				if self.__Settings["sizing-covers"] == True:
+					# Определение разрешения.
+					Resolution = GetImageResolution(self.__Settings["covers-directory"] + UsedTitleName + "/" + Cover["filename"])
+					# Заполнение разрешения.
+					Cover["width"] = Resolution["width"]
+					Cover["height"] = Resolution["height"]
 
 			# Если у обложки нет источника.
 			else:
@@ -317,14 +282,12 @@ class TitleParser:
 		
 		# Если процесс парсинга активен.
 		if self.__IsActive == True:
-			# Переход на страницу всех глав тайтла или похожих тайтлов.
-			self.__Navigator.loadPage(TitleURL)
-			# HTML код тела страницы после полной загрузки.
-			PageHTML = self.__Navigator.getBodyHTML()
+			# HTML код страницы.
+			PageHTML = self.__Requestor.get(TitleURL).text
 			# Парсинг HTML кода страницы.
 			Soup = BeautifulSoup(PageHTML, "html.parser")
 			# Получение данных об обложке.
-			self.__Title["covers"] = self.__GetCoverData()
+			self.__Title["covers"] = self.__GetCoverData(PageHTML)
 			# Поиск русского названия.
 			self.__Title["ru-name"] = Soup.find("span", {"class": "rus-name"}).get_text()
 			# Поиск английского названия.
@@ -451,7 +414,7 @@ class TitleParser:
 		logging.info("Title: \"" + self.__Slug + "\". Merged chapters: " + str(self.__MergedChaptersCount) + ".")
 
 	# Конструктор: строит структуру описательного файла тайтла и проверяет наличие локальных данных.
-	def __init__(self, Settings: dict, Navigator: BrowserNavigator, Slug: str, ForceMode: bool = False, Message: str = "", Amending: bool = True):
+	def __init__(self, Settings: dict, Slug: str, ForceMode: bool = False, Message: str = "", Amending: bool = True):
 
 		#---> Генерация динамических свойств.
 		#==========================================================================================#
@@ -463,12 +426,12 @@ class TitleParser:
 		self.__ForceMode = ForceMode
 		# Глобальные настройки.
 		self.__Settings = Settings.copy()
-		# Обработчик навигации экземпляра браузера.
-		self.__Navigator = Navigator
+		# Запросчик.
+		self.__Requestor = WebRequestor()
 		# Состояние: доступен ли тайтл.
 		self.__IsActive = True
 		# ID тайтла.
-		self.__TitleID = Slug.split('.')[-1]
+		self.__TitleID = Slug.split(".")[-1]
 		# Описательная структура тайтла.
 		self.__Title = {
 			"format": "dmp-v1",
@@ -483,8 +446,8 @@ class TitleParser:
 			"publication-year": None,
 			"age-rating": None,
 			"description": None,
-			"type": None,
-			"status": None,
+			"type": "ANOTHER",
+			"status": "ANOTHER",
 			"is-licensed": None,
 			"series": list(),
 			"genres": list(),
@@ -496,6 +459,9 @@ class TitleParser:
 		self.__Slug = Slug
 		# Сообщение из внешнего обработчика.
 		self.__Message = Message + "Current title: " + self.__Slug + "\n\n"
+		
+		# Инициализация запросчика.
+		self.__Requestor.initialize()
 
 		#---> Получение данных о тайтле.
 		#==========================================================================================#
